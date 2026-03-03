@@ -1,0 +1,32 @@
+name: Daily Web Scraping Bot
+
+on:
+  schedule:
+    # Jadwal: Berjalan setiap hari jam 08:00 WIB (01:00 UTC)
+    - cron: '0 1 * * *'
+  workflow_dispatch: # Agar kita bisa tekan tombol "Run" manual untuk tes
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ambil kode dari repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Library yang dibutuhkan
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Jalankan Bot Scraper
+        env:
+          # Di sini kita menghubungkan "Kunci Rahasia" GitHub ke Bot kita
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scheduler_bot.py
