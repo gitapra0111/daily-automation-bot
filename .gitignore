@@ -1,0 +1,5 @@
+.env
+hasil_ekstrak/
+logs/
+__pycache__/
+tempCodeRunnerFile.py
