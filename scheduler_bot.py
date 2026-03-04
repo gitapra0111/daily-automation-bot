@@ -1,7 +1,9 @@
 import os
-import openpyxl
 import logging
+import sqlite3
+import pandas as pd
 import requests
+from io import StringIO
 from datetime import datetime
 from dotenv import load_dotenv
 from selenium import webdriver
@@ -47,9 +49,9 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-# 3. FUNGSI UTAMA (BOT SCRAPER)
+# 3. FUNGSI UTAMA (BOT SCRAPER + PANDAS + SQLITE)
 def job():
-    logging.info("Bot Cloud berjalan mengambil data...")
+    logging.info("Bot berjalan mengambil data menggunakan Pandas...")
     
     try:
         options = Options()
@@ -58,38 +60,48 @@ def job():
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
 
-        # DISINI PERUBAHANNYA: Selenium Manager akan otomatis mencari Chrome
         driver = webdriver.Chrome(options=options)
         wait = WebDriverWait(driver, 20)
         
         driver.get("https://the-internet.herokuapp.com/tables")
-        table = wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+        wait.until(EC.presence_of_element_located((By.ID, "table1")))
 
-        workbook = openpyxl.Workbook()
-        sheet = workbook.active
-        rows = table.find_elements(By.TAG_NAME, "tr")
-        for row in rows:
-            cols = row.find_elements(By.TAG_NAME, "td")
-            data = [col.text for col in cols]
-            if data:
-                sheet.append(data)
+        # --- TAHAP A: DATA WRANGLING DENGAN PANDAS ---
+        html_source = driver.page_source
+        # Sedot HTML dan langsung ubah jadi DataFrame (Tabel Pandas)
+        df = pd.read_html(StringIO(html_source))[0] 
+        
+        # Bersihkan Data: Hapus kolom 'Action' karena isinya hanya tombol
+        if 'Action' in df.columns:
+            df = df.drop(columns=['Action'])
+            
+        driver.quit() # Matikan browser lebih awal karena data sudah di memori
 
+        # --- TAHAP B: INTEGRASI DATABASE (SQLite) ---
+        db_path = os.path.join(DATA_DIR, "database_scraping.db")
+        conn = sqlite3.connect(db_path)
+        # Simpan tabel Pandas langsung ke Database SQL
+        df.to_sql("tabel_karyawan", conn, if_exists="append", index=False)
+        conn.close()
+        logging.info("✅ Data berhasil di-insert ke tabel_karyawan di Database SQLite.")
+
+        # --- TAHAP C: EXPORT KE EXCEL ---
         waktu_sekarang = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        nama_file = f"auto_data_{waktu_sekarang}.xlsx"
+        nama_file = f"laporan_pandas_{waktu_sekarang}.xlsx"
         lokasi_simpan = os.path.join(DATA_DIR, nama_file)
+        
+        # Simpan ke Excel tanpa menyertakan nomor index baris
+        df.to_excel(lokasi_simpan, index=False)
+        logging.info(f"✅ Data Excel berhasil dibuat: {nama_file}")
 
-        workbook.save(lokasi_simpan)
-        driver.quit()
-        
-        logging.info(f"Data Excel berhasil disimpan: {nama_file}")
-        pesan_sukses = f"✅ Laporan Ekstrak Data dari Server Cloud Selesai!\n⏰ Waktu: {waktu_sekarang}"
-        
+        # --- TAHAP D: KIRIM TELEGRAM ---
+        pesan_sukses = f"✅ Laporan Pandas & Database Selesai!\n⏰ Waktu: {waktu_sekarang}\n🗄️ Data tersimpan permanen di SQLite."
         kirim_pesan_telegram(pesan_sukses)
         kirim_file_telegram(lokasi_simpan)
 
     except Exception as e:
         logging.error(f"Error: {e}")
-        kirim_pesan_telegram(f"🚨 ALERT BOS!\nBot Scraper di Cloud mengalami error:\n{e}")
+        kirim_pesan_telegram(f"🚨 ALERT BOS!\nBot Scraper mengalami error:\n{e}")
 
 if __name__ == "__main__":
     job()
